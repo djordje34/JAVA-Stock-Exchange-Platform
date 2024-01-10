@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "rs.raf.pds.v5.z2.gRPC";
+
+service StockExchangeService {
+    rpc GetStockData (Empty) returns (StockDataList);
+    rpc GetAskList (AskListRequest) returns (AskList);
+    rpc GetBidList (BidListRequest) returns (BidList);
+    rpc SubmitOrder (OrderRequest) returns (OrderResponse);
+    rpc GetTradeList (TradeListRequest) returns (TradeList);
+    rpc GetClientPortfolio (ClientPortfolioRequest) returns (ClientPortfolio);
+    rpc NotifyTrade(Trade) returns (Empty);
+    rpc subscribeToTradeUpdates(Empty) returns (stream Trade);
+    rpc GetStockDataByDateTime (StockDataByDateTimeRequest) returns (StockDataList);
+}
+
+message StockData {
+    string symbol = 1;
+    string companyName = 2;
+    double currentPrice = 3;
+    double priceChange = 4;
+    string date = 5;
+    int32 hour = 6;
+}
+
+message AskData {
+    string symbol = 1;
+    double askPrice = 2;
+    int32 availableShares = 3;
+}
+
+message BidData {
+    string symbol = 1;
+    double bidPrice = 2;
+    int32 requestedShares = 3;
+}
+
+message OrderData {
+    string symbol = 1;
+    double price = 2;
+    int32 quantity = 3;
+    bool isBuyOrder = 4;
+    string clientId = 5;
+}
+
+message StockDataList {
+    repeated StockData stocks = 1;
+}
+
+message AskListRequest {
+    string symbol = 1;
+    int32 numberOfOffers = 2;
+}
+
+message AskList {
+    repeated AskData asks = 1;
+}
+
+message BidListRequest {
+    string symbol = 1;
+    int32 numberOfOffers = 2;
+}
+
+message BidList {
+    repeated BidData bids = 1;
+}
+
+message OrderRequest {
+    OrderData order = 1;
+}
+
+
+message OrderResponse {
+    bool success = 1;
+}
+
+message Trade {
+    string symbol = 1;
+    double price = 2;
+    int32 quantity = 3;
+    string buyerClientId = 4;
+    string sellerClientId = 5;
+    string date = 6;
+}
+
+message TradeListRequest {
+    string symbol = 1;
+    string date = 2;
+}
+
+message TradeList {
+    repeated Trade trades = 1;
+}
+
+message ClientStock {
+    string symbol = 1;
+    int32 quantity = 2;
+}
+
+message ClientPortfolioRequest {
+    string clientId = 1;
+}
+
+message ClientPortfolio {
+    string clientId = 1;
+    repeated ClientStock stocks = 2;
+}
+
+message StockDataByDateTimeRequest {
+    string date = 1;
+    int32 hour = 2;
+}
+
+message Empty {}
