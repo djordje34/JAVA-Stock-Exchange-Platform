@@ -15,6 +15,7 @@ This project demonstrates a Stock Exchange Platform with a client-server archite
 
 * Java Development Kit (JDK)
 * Maven
+* protobuf (optional)
 
 ### Build
 
