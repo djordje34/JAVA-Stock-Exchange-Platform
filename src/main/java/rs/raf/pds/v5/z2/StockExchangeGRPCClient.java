@@ -201,16 +201,16 @@ public class StockExchangeGRPCClient {
     }
     
 
-    private void getAskList() {
-        System.out.println("Enter symbol:");
-        String symbol = new Scanner(System.in).nextLine();
+    private void getAskList(String symbol, int noffers) {	//PREPRAVI DA SVE IDE U JEDNU LINIJU
+        //System.out.println("Enter symbol:");
+        //String symbol = new Scanner(System.in).nextLine();
 
-        System.out.println("Enter number of offers:");
-        int numberOfOffers = new Scanner(System.in).nextInt();
+        //System.out.println("Enter number of offers:");
+        //int numberOfOffers = new Scanner(System.in).nextInt();
 
         AskListRequest request = AskListRequest.newBuilder()
                 .setSymbol(symbol)
-                .setNumberOfOffers(numberOfOffers)
+                .setNumberOfOffers(noffers)
                 .build();
         AskList askList = blockingStub.getAskList(request);
 
@@ -222,16 +222,16 @@ public class StockExchangeGRPCClient {
         }
     }
 
-    private void getBidList() {
-        System.out.println("Enter symbol:");
-        String symbol = new Scanner(System.in).nextLine();
+    private void getBidList(String symbol, int noffers) {
+        //System.out.println("Enter symbol:");
+        //String symbol = new Scanner(System.in).nextLine();
 
-        System.out.println("Enter number of offers:");
-        int numberOfOffers = new Scanner(System.in).nextInt();
+        //System.out.println("Enter number of offers:");
+        //int numberOfOffers = new Scanner(System.in).nextInt();
 
         BidListRequest request = BidListRequest.newBuilder()
                 .setSymbol(symbol)
-                .setNumberOfOffers(numberOfOffers)
+                .setNumberOfOffers(noffers)
                 .build();
         BidList bidList = blockingStub.getBidList(request);
 
@@ -339,10 +339,18 @@ public class StockExchangeGRPCClient {
 					}
                 }
                 else if(choice.toUpperCase().startsWith("GET ASK")) {
-                	grpcClient.getAskList();
+                	if(parts.length == 4) {
+                		String symbol = parts[2];
+                		int noffers = Integer.parseInt(parts[3]); // add guards to check if symbol exists
+                		grpcClient.getAskList(symbol, noffers);
+                	}
                 }
                 else if(choice.toUpperCase().startsWith("GET BID")) {
-                	grpcClient.getBidList();
+                	if(parts.length == 4) {
+                		String symbol = parts[2];
+                		int noffers = Integer.parseInt(parts[3]);
+                		grpcClient.getBidList(symbol, noffers);
+                	}
                 }
                 else if(choice.toUpperCase().startsWith("BUY")) {
                 	if(parts.length == 4)
@@ -364,8 +372,8 @@ public class StockExchangeGRPCClient {
                 }
                 else if(choice.toUpperCase().startsWith("HELP")) {
                 	System.out.println("Get stock data: 'GET STOCK'");
-                	System.out.println("Get ask list: 'GET ASK'");
-                	System.out.println("Get bid list: 'GET BID'");
+                	System.out.println("Get ask list: 'GET ASK {symbol} {number_of_offers}'");
+                	System.out.println("Get bid list: 'GET BID {symbol} {number_of_offers}'");
                 	System.out.println("Place buy order: 'BUY {symbol} {price} {quantity}'");
                 	System.out.println("Place sell order: 'SELL {symbol} {price} {quantity}'");
                 	System.out.println("Get historical stock data: 'HISTORY {date (dd/mm/yyyy)} {hour (8-18)}'");
