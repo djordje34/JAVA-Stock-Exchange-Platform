@@ -5,12 +5,15 @@ import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
 import rs.raf.pds.v5.z2.gRPC.*;
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -41,7 +44,8 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
     private static final String ANSI_RESET = "\u001B[0m";
     private static final String ANSI_GREEN = "\u001B[32m";
     private static final String ANSI_RED = "\u001B[31m";
-    private static final long INTERVAL_DURATION = 1 * 300 * 1000;
+    private static final long INTERVAL_DURATION = 1 * 60 * 1000;
+    private static long lastUpdateTimestamp = 0L;
     private int currentHour = 8;
     private LocalDate currentDate = LocalDate.of(2024, 1, 7);
     private Timer updateTimer;	//keep dummyStockDataLists price and price change updated constantly
@@ -77,6 +81,7 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
     private void updateDummy() {
     	
     	for(int i=0;i<stockDataList.size();i++) {
+    		
     		double stock_diff = stockDataList.get(i).getCurrentPrice()-dummyStockDataList.get(i).getCurrentPrice();
         	String symbol = stockDataList.get(i).getSymbol();
         	String name = stockDataList.get(i).getCompanyName();
@@ -125,10 +130,11 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
     private void notifyStockPriceChange(String symbol, double newPrice, double priceChange) {
         String stockUpdate;
         String change = String.format("%.2f",priceChange);
+        String np = String.format("%.2f",newPrice);
         if (priceChange > 0)
-            stockUpdate = symbol + " " + newPrice + " " + ANSI_GREEN + "↑+" + change + ANSI_RESET;
+            stockUpdate = symbol + " " + np + " " + ANSI_GREEN + "↑+" + change + ANSI_RESET;
         else
-            stockUpdate = symbol + " " + newPrice + " " + ANSI_RED + "↓" + change + ANSI_RESET;
+            stockUpdate = symbol + " " + np + " " + ANSI_RED + "↓" + change + ANSI_RESET;
 
         for (Map.Entry<Socket, Set<String>> entry : clientStockSelections.entrySet()) {
             Socket clientSocket = entry.getKey();
@@ -145,6 +151,27 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
             }
         }
     }
+    
+    
+    private void saveTradesToFile(List<Trade> trades) {
+        String fileName = "trades_log.txt";
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss");
+
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(fileName, true))) {
+            for (Trade trade : trades) {
+                String timestamp = LocalDateTime.now().format(formatter);
+                String logEntry = String.format("[%s] Symbol: %s, Price: %.2f, Quantity: %d, Buyer: %s, Seller: %s",
+                        timestamp, trade.getSymbol(), trade.getPrice(), trade.getQuantity(),
+                        trade.getBuyerClientId(), trade.getSellerClientId());
+
+                writer.write(logEntry);
+                writer.newLine();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+    
   //temp method
     private void notifyClientsInTrade(Trade trade) {
         String buyerClientId = trade.getBuyerClientId();
@@ -169,6 +196,8 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
         updateUserPortfolio(trade.getBuyerClientId(), trade.getSymbol(), trade.getQuantity(), true);
         updateUserPortfolio(trade.getSellerClientId(), trade.getSymbol(), trade.getQuantity(), false);
         notifyClientsInTrade(trade);
+        
+        saveTradesToFile(Collections.singletonList(trade));
     }
 
     private void removeOrder(String clientId, String symbol, double price, int quantity, boolean isBuyOrder) {
@@ -255,7 +284,7 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
                     .findFirst()
                     .orElse(null);
             double updatedPriceChange;
-           if(history.size()>1) updatedPriceChange = stockData.getCurrentPrice() - dummyStockData.getCurrentPrice();
+           if(history.size()>1) updatedPriceChange = stockData.getPriceChange();
            else updatedPriceChange = stockData.getPriceChange();
             StockData updatedStockData = stockData.toBuilder()
                     .setPriceChange(updatedPriceChange)
@@ -412,7 +441,6 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
 
             writer.println("You are now tracking: " + selectedStocks);
             
-            sendTcpStockUpdates();
 
             while (true) {
                 if (clientSocket.isClosed()) {
@@ -434,7 +462,9 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
         StockData stockData = getStockDataBySymbol(symbol);
         if (stockData != null) {
             double currentPrice = stockData.getCurrentPrice();
-            double newPrice = currentPrice + (orderPrice * quantity) / 100.0; //new price sample function
+            double newPrice = currentPrice + ((orderPrice-currentPrice) * quantity) / 100.0; //new price sample function
+            String np = String.format("%.2f", newPrice);
+            newPrice = Double.parseDouble(np);
             double priceChange = newPrice - currentPrice;
             updateStockData(symbol, newPrice, priceChange);
 
@@ -449,7 +479,10 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
         StockData stockData = getStockDataBySymbol(symbol);
         if (stockData != null) {
             double currentPrice = stockData.getCurrentPrice();
-            double newPrice = currentPrice - (orderPrice * quantity) / 100.0;
+            double newPrice = currentPrice - ((orderPrice-currentPrice) * quantity) / 100.0;
+            String np = String.format("%.2f", newPrice);
+            newPrice = Double.parseDouble(np);
+            
             double priceChange = newPrice - currentPrice;
             updateStockData(symbol, newPrice, priceChange);
             notifyStockPriceChange(symbol, newPrice,priceChange);
@@ -512,44 +545,51 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
         timer.scheduleAtFixedRate(new TimerTask() {
             @Override
             public void run() {
-                for (Map.Entry<Socket, Set<String>> entry : clientStockSelections.entrySet()) {
-                    Socket clientSocket = entry.getKey();
-                    Set<String> selectedStocks = entry.getValue();
+                long currentTimeMillis = System.currentTimeMillis();
 
-                    try {
-                        PrintWriter writer = new PrintWriter(clientSocket.getOutputStream(), true);
-                        StringBuilder updateMessage = new StringBuilder("Stock data periodical update:~");
+                // Check if the elapsed time since the last update is greater than INTERVAL_DURATION
+                if (currentTimeMillis - lastUpdateTimestamp >= INTERVAL_DURATION) {
+                    lastUpdateTimestamp = currentTimeMillis;
 
-                        for (StockData stockData : stockDataList) {
-                            if (selectedStocks.contains(stockData.getSymbol())) {
-                                StockData dummyStockData = dummyStockDataList.stream()
-                                        .filter(dummyData -> dummyData.getSymbol().equals(stockData.getSymbol()))
-                                        .findFirst()
-                                        .orElse(null);
-                                double updatedPriceChange;
-                                if (history.size() > 1) {
-                                    updatedPriceChange = stockData.getCurrentPrice() - dummyStockData.getCurrentPrice();
-                                } else {
-                                    updatedPriceChange = stockData.getPriceChange();
+                    for (Map.Entry<Socket, Set<String>> entry : clientStockSelections.entrySet()) {
+                        Socket clientSocket = entry.getKey();
+                        Set<String> selectedStocks = entry.getValue();
+
+                        try {
+                            PrintWriter writer = new PrintWriter(clientSocket.getOutputStream(), true);
+                            StringBuilder updateMessage = new StringBuilder("Stock data periodical update:~");
+
+                            for (StockData stockData : stockDataList) {//dummy se izlgeda prebrzo updatuje
+                                if (selectedStocks.contains(stockData.getSymbol())) {
+                                    StockData dummyStockData = dummyStockDataList.stream()
+                                            .filter(dummyData -> dummyData.getSymbol().equals(stockData.getSymbol()))
+                                            .findFirst()
+                                            .orElse(null);
+                                    double updatedPriceChange;
+                                    if (history.size() > 1) {
+                                        updatedPriceChange = stockData.getPriceChange();
+                                    } else {
+                                        updatedPriceChange = stockData.getPriceChange();
+                                    }
+
+                                    String color = updatedPriceChange > 0 ? ANSI_GREEN + "↑+" : ANSI_RED + "↓";
+                                    String RESET = "\u001B[0m";
+                                    String dataString = stockData.getSymbol() + " " + stockData.getCompanyName() + " " +
+                                            " " + stockData.getCurrentPrice() + " " +
+                                            color + String.format("%.2f", updatedPriceChange) + RESET +
+                                            " " + stockData.getDate() + " " + stockData.getHour() + "h";
+
+                                    updateMessage.append(dataString).append("~");
                                 }
-
-                                String color = updatedPriceChange > 0 ? ANSI_GREEN + "↑+" : ANSI_RED + "↓";
-                                String RESET = "\u001B[0m";
-                                String dataString = stockData.getSymbol() + " " + stockData.getCompanyName() + " " +
-                                        " " + stockData.getCurrentPrice() + " " +
-                                        color + String.format("%.2f", updatedPriceChange) + RESET +
-                                        " " + stockData.getDate() + " " + stockData.getHour() + "h";
-
-                                updateMessage.append(dataString).append("~");
                             }
+                            writer.println(updateMessage.toString());
+                        } catch (IOException e) {
+                            e.printStackTrace();
                         }
-                        writer.println(updateMessage.toString());
-                    } catch (IOException e) {
-                        e.printStackTrace();
                     }
                 }
             }
-        }, 0, 300000);
+        }, 60000, 60000);
     }
     
 
@@ -560,6 +600,7 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
                 Socket clientSocket = serverSocket.accept();
                 System.out.println("New client connected: " + clientSocket.getInetAddress());
                 new Thread(() -> handleSocketClient(clientSocket)).start();
+                sendTcpStockUpdates();
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -570,6 +611,7 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
         StockExchangeGRPCServer stockExchangeServer = new StockExchangeGRPCServer();
         Server server = ServerBuilder.forPort(7999).addService(stockExchangeServer).build();
         server.start();
+        
         System.out.println("Stock Exchange gRPC Server started on port 7999");
         new Thread(stockExchangeServer::startSocketServer).start();
 

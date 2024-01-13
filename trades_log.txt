@@ -1,0 +1,1 @@
+[13/01/2024 14:17:24] Symbol: AAPL, Price: 200.00, Quantity: 5, Buyer: 565b0145-268c-4049-985f-f5f7bd329804, Seller: 927d7acb-88d2-412a-aaf9-272c6921c7e3
