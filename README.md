@@ -38,11 +38,11 @@ GET STOCKS
 ```
 - **Get Ask List:**
 ```
-GET ASK
+GET ASK {stock_symbol} {number_of_offers}
 ```
 - **Get Bid List:**
 ```
-GET BID
+GET BID {stock_symbol} {number_of_offers}
 ```
 - **Place Buy Order:**
 ```
