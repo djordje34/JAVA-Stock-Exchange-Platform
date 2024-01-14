@@ -7,7 +7,7 @@ This project demonstrates a Stock Exchange Platform with a client-server archite
 * TCP Updates: Real-time stock price updates over TCP.
 * Client Portfolio: View and manage your stock portfolio.
 * Place Orders: Submit buy or sell orders for selected stocks.
-* Retrieve Data: Get real-time stock data, ask and bid lists, historical stock data, and more.
+* Retrieve Data: Get real-time stock data updates, ask and bid lists, historical stock data, and more.
 
 ## Getting Started
 
