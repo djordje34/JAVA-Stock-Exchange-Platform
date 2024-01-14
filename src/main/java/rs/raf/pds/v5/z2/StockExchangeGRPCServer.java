@@ -21,6 +21,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -44,10 +45,10 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
     private static final String ANSI_RESET = "\u001B[0m";
     private static final String ANSI_GREEN = "\u001B[32m";
     private static final String ANSI_RED = "\u001B[31m";
-    private static final long INTERVAL_DURATION = 1 * 60 * 1000;
+    private static final long INTERVAL_DURATION = 1 * 300 * 1000;
     private static long lastUpdateTimestamp = 0L;
     private int currentHour = 8;
-    private LocalDate currentDate = LocalDate.of(2024, 1, 7);
+    LocalDateTime currentDate = LocalDateTime.now();
     private Timer updateTimer;	//keep dummyStockDataLists price and price change updated constantly
     							//mora da se namesti da korisnik bira kompanije za upadte preko tcpa
     public StockExchangeGRPCServer() {
@@ -94,8 +95,22 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
     }
     
     private void processPendingUpdates() {
-    	System.out.println("UPDATING...");
-        updateDummy();
+        System.out.println("UPDATING...");
+
+        synchronized (stockDataList) {
+            for (int i = 0; i < stockDataList.size(); i++) {
+                double stock_diff = stockDataList.get(i).getCurrentPrice() - dummyStockDataList.get(i).getCurrentPrice();
+                String symbol = stockDataList.get(i).getSymbol();
+                String name = stockDataList.get(i).getCompanyName();
+                double newPrice = stockDataList.get(i).getCurrentPrice();
+                String date = currentDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+
+                // Use set method to update the stock element
+                dummyStockDataList.set(i, createStockData(symbol, name, newPrice, stock_diff, date, currentHour));
+                stockDataList.set(i, createStockData(symbol, name, newPrice, stock_diff, date, currentHour));
+            }
+        }
+        history.add(new ArrayList<>(dummyStockDataList));
     }
     
     private class UpdateTask extends TimerTask {
@@ -176,7 +191,6 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
     private void notifyClientsInTrade(Trade trade) {
         String buyerClientId = trade.getBuyerClientId();
         String sellerClientId = trade.getSellerClientId();
-        System.out.println("DA");
         String buyerNotification = String.format("Congratulations! Your buy order for %d shares of %s at $%.2f was successful.",
                 trade.getQuantity(), trade.getSymbol(), trade.getPrice());
 
@@ -191,8 +205,8 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
         tradeList.add(trade);
         NotifyAllClients(trade);
         //notifyStockPriceChange(trade.getSymbol(), trade.getPrice(), trade.getQuantity());
-        removeOrder(trade.getBuyerClientId(), trade.getSymbol(), trade.getPrice(), trade.getQuantity(), true);
-        removeOrder(trade.getSellerClientId(), trade.getSymbol(), trade.getPrice(), trade.getQuantity(), false);
+        //removeOrder(trade.getBuyerClientId(), trade.getSymbol(), trade.getPrice(), trade.getQuantity(), true);
+        //removeOrder(trade.getSellerClientId(), trade.getSymbol(), trade.getPrice(), trade.getQuantity(), false);
         updateUserPortfolio(trade.getBuyerClientId(), trade.getSymbol(), trade.getQuantity(), true);
         updateUserPortfolio(trade.getSellerClientId(), trade.getSymbol(), trade.getQuantity(), false);
         notifyClientsInTrade(trade);
@@ -250,8 +264,8 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
     }
     
     private void NotifyAllClients(Trade trade) {
-        String notification = String.format("User %s bought %d shares of %s at $%.2f from User %s",
-                trade.getBuyerClientId(), trade.getQuantity(), trade.getSymbol(), trade.getPrice(), trade.getSellerClientId());
+        String notification = String.format("User %s bought %d shares of %s at $%.2f",// from User %s",
+                trade.getBuyerClientId(), trade.getQuantity(), trade.getSymbol(), trade.getPrice());//, trade.getSellerClientId());
 
         for (Socket clientSocket : clientSockets.values()) {
             try {
@@ -358,14 +372,14 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
         if (isBuyOrder) {
         	buyOrders.add(orderData);
         	try {
-				updateStockPriceForBuyOrder(symbol, price, quantity, clientId);
+				updateStockPriceForBuyOrder(orderData);
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
         } else {
         	sellOrders.add(orderData);
         	try {
-				updateStockPriceForSellOrder(symbol, price, quantity, clientId);
+				updateStockPriceForSellOrder(orderData);
 			} catch (Exception e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
@@ -458,8 +472,13 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
     }
    
     
-    private void updateStockPriceForBuyOrder(String symbol, double orderPrice, int quantity, String buyerClientId) throws Exception {
-        StockData stockData = getStockDataBySymbol(symbol);
+    private void updateStockPriceForBuyOrder(OrderData orderData) throws Exception {
+    	String symbol = orderData.getSymbol();
+    	double orderPrice = orderData.getPrice();
+    	int quantity = orderData.getQuantity();
+    	String buyerClientId = orderData.getClientId();
+    	
+    	StockData stockData = getStockDataBySymbol(symbol);
         if (stockData != null) {
             double currentPrice = stockData.getCurrentPrice();
             double newPrice = currentPrice + ((orderPrice-currentPrice) * quantity) / 100.0; //new price sample function
@@ -469,13 +488,18 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
             updateStockData(symbol, newPrice, priceChange);
 
             notifyStockPriceChange(symbol, newPrice,priceChange);
-            checkAndCreateTrades(symbol, orderPrice, quantity, true, buyerClientId);
+            checkAndCreateTrades(orderData);
         }
         else {
         	throw new Exception();
         }
     }
-    private void updateStockPriceForSellOrder(String symbol, double orderPrice, int quantity, String sellerClientId) throws Exception {
+    private void updateStockPriceForSellOrder(OrderData orderData) throws Exception {
+    	String symbol = orderData.getSymbol();
+    	double orderPrice = orderData.getPrice();
+    	int quantity = orderData.getQuantity();
+    	String buyerClientId = orderData.getClientId();
+    	
         StockData stockData = getStockDataBySymbol(symbol);
         if (stockData != null) {
             double currentPrice = stockData.getCurrentPrice();
@@ -486,34 +510,90 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
             double priceChange = newPrice - currentPrice;
             updateStockData(symbol, newPrice, priceChange);
             notifyStockPriceChange(symbol, newPrice,priceChange);
-            checkAndCreateTrades(symbol, orderPrice, quantity, false, sellerClientId);
+            checkAndCreateTrades(orderData);
         }
         else {
         	throw new Exception();
         }
     }
+    
+    
+    private void updateOrderQuantity(List<OrderData> orders, OrderData orderToUpdate, int newQuantity) {
+        // Find the index of the order to update
+        int index = orders.indexOf(orderToUpdate);
 
-    private void checkAndCreateTrades(String symbol, double orderPrice, int quantity, boolean isBuyOrder, String clientId) {
-        List<OrderData> matchingOrders = isBuyOrder ? sellOrders : buyOrders;
-        OrderData matchingOrder = null;
-
-        for (OrderData order : matchingOrders) {
-            if (order.getSymbol().equals(symbol) && order.getPrice() == orderPrice && order.getQuantity() == quantity) {
-                matchingOrder = order;
-                break;
-            }
+        if (index != -1) {
+            OrderData updatedOrder = OrderData.newBuilder(orderToUpdate)
+                                              .setQuantity(newQuantity)
+                                              .build();
+            orders.set(index, updatedOrder);
         }
-        if (matchingOrder != null) {
-            Trade trade = Trade.newBuilder()
-                    .setSymbol(symbol)
-                    .setPrice(orderPrice)
-                    .setQuantity(quantity)
-                    .setDate(currentDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")))
-                    .setBuyerClientId(isBuyOrder ? clientId : matchingOrder.getClientId())
-                    .setSellerClientId(isBuyOrder ? matchingOrder.getClientId() : clientId)
-                    .build();
+    }
+    
+    //Само Бог и ја сада знамо како ради ова метода. Нажалост, ја имам проблема са памћењем
+    private void checkAndCreateTrades(OrderData orderData) {
+        String symbol = orderData.getSymbol();
+        double orderPrice = orderData.getPrice();
+        int quantity = orderData.getQuantity();
+        boolean isBuyOrder = orderData.getIsBuyOrder();
+        String clientId = orderData.getClientId();
 
-            handleTrade(trade);
+        List<OrderData> matchingOrders = isBuyOrder ? sellOrders : buyOrders;
+        List<OrderData> otherOrders = isBuyOrder ? buyOrders : sellOrders;
+
+        if (quantity <= 0) {
+            return;
+        }
+
+        Iterator<OrderData> matchingOrderIterator = matchingOrders.iterator();
+        while (matchingOrderIterator.hasNext()) {
+            OrderData matchingOrder = matchingOrderIterator.next();
+
+            if (matchingOrder.getSymbol().equals(symbol) && matchingOrder.getPrice() == orderPrice) {
+                int availableQuantity = matchingOrder.getQuantity();
+                if (availableQuantity >= quantity) {
+                    Trade trade = Trade.newBuilder()
+                            .setSymbol(symbol)
+                            .setPrice(orderPrice)
+                            .setQuantity(quantity)
+                            .setDate(currentDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")))
+                            .setBuyerClientId(isBuyOrder ? clientId : matchingOrder.getClientId())
+                            .setSellerClientId(isBuyOrder ? matchingOrder.getClientId() : clientId)
+                            .build();
+
+                    handleTrade(trade);
+                    int index = matchingOrders.indexOf(matchingOrder);
+                    updateOrderQuantity(matchingOrders, matchingOrder, availableQuantity - quantity);
+                    matchingOrder = matchingOrders.get(index);
+                    System.out.println(availableQuantity - quantity + " " + matchingOrder.getQuantity());
+                    if (matchingOrder.getQuantity() == 0) {
+                        matchingOrderIterator.remove();
+                    }
+
+                    removeOrder(clientId, trade.getSymbol(), trade.getPrice(), trade.getQuantity(), isBuyOrder);
+
+                    break;
+                } else {
+                    Trade trade = Trade.newBuilder()
+                            .setSymbol(symbol)
+                            .setPrice(orderPrice)
+                            .setQuantity(availableQuantity)
+                            .setDate(currentDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")))
+                            .setBuyerClientId(isBuyOrder ? clientId : matchingOrder.getClientId())
+                            .setSellerClientId(isBuyOrder ? matchingOrder.getClientId() : clientId)
+                            .build();
+                    handleTrade(trade);
+
+                    matchingOrderIterator.remove();
+
+                    int index = otherOrders.indexOf(orderData);
+                    updateOrderQuantity(otherOrders, orderData, quantity - availableQuantity);
+                    orderData = otherOrders.get(index);
+
+                    checkAndCreateTrades(orderData);
+                    break;
+                }
+            }
         }
     }
     
@@ -589,7 +669,7 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
                     }
                 }
             }
-        }, 60000, 60000);
+        }, 300000, 300000);
     }
     
 

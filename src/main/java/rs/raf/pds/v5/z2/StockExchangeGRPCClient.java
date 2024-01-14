@@ -11,6 +11,10 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Scanner;
 import java.util.UUID;
 
@@ -116,15 +120,15 @@ public class StockExchangeGRPCClient {
                     		System.out.println(tcpMessage);
                     	}
                     	else if (tcpMessage.startsWith("User")) {
-                            System.out.println("Received trade notification: " + tcpMessage);
+                            System.out.println("Received trade notification: \n" + tcpMessage);
                         }
                         else if(tcpMessage.startsWith("Congratulations")) {
                         	String[] parts = tcpMessage.split(" ");
-                        	if(parts[2] == "buy") {
-                        		balance -= Double.parseDouble(parts[10]);
+                        	if(parts[2].trim().equals("buy")) {
+                        		balance -= Double.parseDouble(parts[10].trim().replace("$", ""));
                         	}
-                        	else if(parts[2] == "sell") {
-                        		balance += Double.parseDouble(parts[10]);
+                        	else if(parts[2].trim().equals("sell")) {
+                        		balance += Double.parseDouble(parts[10].trim().replace("$", ""));
                         	}
                         	System.out.println("Received trade notification: \n" + tcpMessage);
                         }
@@ -201,44 +205,60 @@ public class StockExchangeGRPCClient {
     }
     
 
-    private void getAskList(String symbol, int noffers) {	//PREPRAVI DA SVE IDE U JEDNU LINIJU
-        //System.out.println("Enter symbol:");
-        //String symbol = new Scanner(System.in).nextLine();
-
-        //System.out.println("Enter number of offers:");
-        //int numberOfOffers = new Scanner(System.in).nextInt();
-
+    private void getAskList(String symbol, int noffers) {
         AskListRequest request = AskListRequest.newBuilder()
                 .setSymbol(symbol)
                 .setNumberOfOffers(noffers)
                 .build();
         AskList askList = blockingStub.getAskList(request);
 
+        // Use a Map to group AskData by price
+        Map<Double, List<AskData>> groupedByPrice = new HashMap<>();
+
         for (AskData askData : askList.getAsksList()) {
-            System.out.println("Symbol: " + askData.getSymbol());
-            System.out.println("Ask Price: " + askData.getAskPrice());
-            System.out.println("Available Shares: " + askData.getAvailableShares());
+            double askPrice = askData.getAskPrice();
+
+            // Group by ask price
+            groupedByPrice.computeIfAbsent(askPrice, k -> new ArrayList<>()).add(askData);
+        }
+
+        // Display the aggregated information
+        for (Map.Entry<Double, List<AskData>> entry : groupedByPrice.entrySet()) {
+            double askPrice = entry.getKey();
+            List<AskData> groupedAsks = entry.getValue();
+
+            int totalAvailableShares = groupedAsks.stream().mapToInt(AskData::getAvailableShares).sum();
+
+            System.out.println("Symbol: " + symbol + " Ask Price: " + askPrice + " Available Shares: " + totalAvailableShares);
             System.out.println("------------------------------------------------------------");
         }
     }
 
     private void getBidList(String symbol, int noffers) {
-        //System.out.println("Enter symbol:");
-        //String symbol = new Scanner(System.in).nextLine();
-
-        //System.out.println("Enter number of offers:");
-        //int numberOfOffers = new Scanner(System.in).nextInt();
-
         BidListRequest request = BidListRequest.newBuilder()
                 .setSymbol(symbol)
                 .setNumberOfOffers(noffers)
                 .build();
         BidList bidList = blockingStub.getBidList(request);
 
+        // Use a Map to group BidData by price
+        Map<Double, List<BidData>> groupedByPrice = new HashMap<>();
+
         for (BidData bidData : bidList.getBidsList()) {
-            System.out.println("Symbol: " + bidData.getSymbol());
-            System.out.println("Bid Price: " + bidData.getBidPrice());
-            System.out.println("Requested Shares: " + bidData.getRequestedShares());
+            double bidPrice = bidData.getBidPrice();
+
+            // Group by bid price
+            groupedByPrice.computeIfAbsent(bidPrice, k -> new ArrayList<>()).add(bidData);
+        }
+
+        // Display the aggregated information
+        for (Map.Entry<Double, List<BidData>> entry : groupedByPrice.entrySet()) {
+            double bidPrice = entry.getKey();
+            List<BidData> groupedBids = entry.getValue();
+
+            int totalRequestedShares = groupedBids.stream().mapToInt(BidData::getRequestedShares).sum();
+
+            System.out.println("Symbol: " + symbol + " Bid Price: " + bidPrice + " Requested Shares: " + totalRequestedShares);
             System.out.println("------------------------------");
         }
     }
@@ -246,7 +266,8 @@ public class StockExchangeGRPCClient {
     private void submitBuy(String symbol, double price, int quantity) {
     	if(price*quantity>balance) {
         	System.out.println("Order failure: Your balance is $"+balance+", and the price for this order is $"+price*quantity);
-        }
+        	return;
+    	}
     	OrderData orderData = OrderData.newBuilder()
                 .setSymbol(symbol)
                 .setPrice(price)
@@ -270,7 +291,6 @@ public class StockExchangeGRPCClient {
                 .build();
     	ClientPortfolio portfolio = getClientPortfolio(requestcp);
         for (ClientStock item : portfolio.getStocksList()) {
-        	System.out.println(item.getSymbol());
         	if(item.getSymbol().equalsIgnoreCase(symbol.trim())) {
         		if(item.getQuantity() >= quantity) {
         			OrderData orderData = OrderData.newBuilder()
@@ -291,7 +311,8 @@ public class StockExchangeGRPCClient {
         	        return;
         		}
         		else {
-        			System.out.println("Order failure: Your quantity of "+symbol+" in your portfolio is"+item.getQuantity()+", which is less than you wanted to sell ("+quantity+")");
+        			System.out.println("Order failure: Your quantity of "+symbol+" in your portfolio is "+item.getQuantity()+", which is less than you wanted to sell ("+quantity+")");
+        			return;
         		}
         	}
         }
@@ -303,7 +324,7 @@ public class StockExchangeGRPCClient {
         int port = 7999;
         ManagedChannel grpcChannel = ManagedChannelBuilder.forAddress(host, port).usePlaintext().build();
         StockExchangeGRPCClient grpcClient = new StockExchangeGRPCClient(grpcChannel);
-        Thread stockDataThread = new Thread(() -> {
+        Thread stockDataThread = new Thread(() -> {	//nepotrenbo
             try {
                 grpcClient.getStockData();
             } catch (InterruptedException e) {
