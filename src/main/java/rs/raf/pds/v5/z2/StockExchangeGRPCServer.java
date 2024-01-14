@@ -503,7 +503,7 @@ public class StockExchangeGRPCServer extends StockExchangeServiceGrpc.StockExcha
         StockData stockData = getStockDataBySymbol(symbol);
         if (stockData != null) {
             double currentPrice = stockData.getCurrentPrice();
-            double newPrice = currentPrice - ((orderPrice-currentPrice) * quantity) / 100.0;
+            double newPrice = currentPrice + ((orderPrice-currentPrice) * quantity) / 100.0;
             String np = String.format("%.2f", newPrice);
             newPrice = Double.parseDouble(np);
             
