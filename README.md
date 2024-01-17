@@ -36,11 +36,11 @@ The client supports the following commands:
 ```
 GET STOCKS
 ```
-- **Get Ask List:**
+- **Get Ask List (sorted by price, ascending):**
 ```
 GET ASK {stock_symbol} {number_of_offers}
 ```
-- **Get Bid List:**
+- **Get Bid List (sorted by price, descending):**
 ```
 GET BID {stock_symbol} {number_of_offers}
 ```
